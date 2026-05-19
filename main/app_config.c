@@ -15,6 +15,8 @@ void config_set_defaults(app_config_t *config)
     config->buzzer_warning_c = 47.0f;
     config->motor_pwm_min_pct = 35;
     config->buzzer_enabled = true;
+    config->buzzer_disarm_c = 44.0f;
+    config->buzzer_tone_type = 0;
 }
 
 esp_err_t config_load(void)
@@ -67,11 +69,19 @@ esp_err_t config_validate(const app_config_t *config)
         return ESP_ERR_INVALID_ARG;
     }
 
+    if (config->relay_cutoff_c > 60.0f) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
     if (config->relay_resume_c >= config->relay_cutoff_c) {
         return ESP_ERR_INVALID_ARG;
     }
 
     if (config->motor_pwm_min_pct > 100) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (config->buzzer_disarm_c >= config->buzzer_warning_c) {
         return ESP_ERR_INVALID_ARG;
     }
 

@@ -16,6 +16,7 @@
 #include "esp_netif.h"
 #include "esp_now.h"
 #include "esp_wifi.h"
+#include "actuators.h"
 #include "app_board.h"
 #include "app_config.h"
 #include "app_state.h"
@@ -87,15 +88,24 @@ static esp_err_t root_handler(httpd_req_t *req)
         ".relay-on{background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)}"
         ".relay-off{background:rgba(16,185,129,.15);color:#10b981;border:1px solid rgba(16,185,129,.3)}"
         ".relay-btn:hover{filter:brightness(1.2)}.relay-btn:disabled{opacity:.4;cursor:not-allowed}"
+        ".sys-banner{text-align:center;padding:10px;border-radius:8px;font-weight:600;"
+        "margin-bottom:20px;font-size:15px;transition:all .3s}"
+        ".sys-on{background:rgba(16,185,129,.15);color:#10b981;border:1px solid rgba(16,185,129,.3)}"
+        ".sys-off{background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)}"
+        ".ctrl-row{display:flex;gap:10px;margin-bottom:20px}"
+        ".ctrl-row .relay-btn{margin-bottom:0;flex:1}"
         ".form-card{background:#1a1d26;border:1px solid #2a2d3a;border-radius:10px;padding:20px}"
         ".form-card h2{font-size:15px;font-weight:600;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #2a2d3a}"
         ".fields{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}"
         ".field label{display:block;font-size:12px;color:#64748b;margin-bottom:6px;letter-spacing:.04em}"
-        ".field input{width:100%;background:#0d1018;border:1px solid #2a2d3a;border-radius:6px;"
+        ".field input,.field select{width:100%;background:#0d1018;border:1px solid #2a2d3a;border-radius:6px;"
         "padding:9px 11px;color:#e2e8f0;font:inherit;font-size:14px}"
-        ".field input:focus{outline:none;border-color:#06b6d4;box-shadow:0 0 0 3px rgba(6,182,212,.1)}"
+        ".field input:focus,.field select:focus{outline:none;border-color:#06b6d4;box-shadow:0 0 0 3px rgba(6,182,212,.1)}"
         ".field input:disabled{opacity:.5}"
-        ".toggle-row{display:flex;align-items:center;justify-content:space-between;"
+        ".section-title{grid-column:1/-1;font-size:11px;font-weight:700;color:#94a3b8;"
+        "padding:10px 0 4px;border-bottom:1px solid #2a2d3a;text-transform:uppercase;letter-spacing:.08em}"
+        ".section-title:first-child{padding-top:0}"
+        ".toggle-row{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;"
         "padding:10px 0;border-top:1px solid #2a2d3a;margin-top:4px}"
         ".toggle-row label{font-size:14px;color:#e2e8f0}"
         "input[type=checkbox]{width:18px;height:18px;accent-color:#06b6d4}"
@@ -107,7 +117,11 @@ static esp_err_t root_handler(httpd_req_t *req)
         ".btn:hover{filter:brightness(1.1)}"
         "@media(max-width:680px){.grid{grid-template-columns:repeat(2,1fr)}.fields{grid-template-columns:1fr}}"
         "@media(max-width:420px){.grid{grid-template-columns:1fr}.card .val{font-size:24px}}"
-        "</style></head>"
+        "</style>"
+        "<link rel='icon' href='data:image/svg+xml,"
+        "<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22>"
+        "<text y=%22.9em%22 font-size=%2290%22>🔥</text></svg>'>"
+        "</head>"
     );
 
     /* body + header */
@@ -118,6 +132,16 @@ static esp_err_t root_handler(httpd_req_t *req)
         "<div class='badge'><span class='dot'></span>estufa.local &mdash; live</div>"
         "</header>"
     );
+
+    /* system banner — dynamic */
+    {
+        char banner[128];
+        snprintf(banner, sizeof(banner),
+            "<div id='sysBanner' class='sys-banner %s'>%s</div>",
+            system_enabled ? "sys-on" : "sys-off",
+            system_enabled ? "Sistema encendido" : "Sistema apagado");
+        httpd_resp_sendstr_chunk(req, banner);
+    }
 
     /* stats grid — dynamic */
     {
@@ -145,8 +169,10 @@ static esp_err_t root_handler(httpd_req_t *req)
         const char *relay_label = relay_state ? "ON" : "OFF";
         const char *relay_sub = relay_overheat_lockout ? "proteccion termica" :
                                 (relay_state ? "activo" : "inactivo");
+        const char *motor_sub = !system_enabled ? "sistema apagado" :
+                                (motor_enabled ? "habilitado" : "deshabilitado");
 
-        char stats[1024];
+        char stats[1200];
         snprintf(stats, sizeof(stats),
             "<section class='grid'>"
             "<div class='card c-blue'><div class='lbl'>T1 Frente</div>"
@@ -159,7 +185,8 @@ static esp_err_t root_handler(httpd_req_t *req)
             "<div class='card c-amber'><div class='lbl'>Motor PWM</div>"
             "<div class='val' id='motorVal'>%" PRIu32 "%%</div>"
             "<div class='bar'><div class='bar-fill' id='motorFill'"
-            " style='width:%" PRIu32 "%%;background:linear-gradient(90deg,#f59e0b,#ef4444)'></div></div></div>"
+            " style='width:%" PRIu32 "%%;background:linear-gradient(90deg,#f59e0b,#ef4444)'></div></div>"
+            "<div class='sub' id='motorSub'>%s</div></div>"
             "<div class='card c-purple'><div class='lbl'>WiFi RSSI</div>"
             "<div class='val' id='rssiVal'>%s</div><div class='sub'>dBm</div></div>"
             "<div class='card'><div class='lbl'>Uptime</div>"
@@ -169,7 +196,7 @@ static esp_err_t root_handler(httpd_req_t *req)
             "</section>",
             t1_str, t2_str,
             relay_color, relay_label, relay_sub,
-            motor_pct, motor_pct,
+            motor_pct, motor_pct, motor_sub,
             rssi_str,
             uptime_h, uptime_m, uptime_ss);
         httpd_resp_sendstr_chunk(req, stats);
@@ -186,15 +213,21 @@ static esp_err_t root_handler(httpd_req_t *req)
         "</div>"
     );
 
-    /* relay button */
+    /* system + motor buttons */
     {
-        char relay_btn[128];
-        snprintf(relay_btn, sizeof(relay_btn),
-            "<button id='relayBtn' class='relay-btn %s' onclick='toggleRelay()' data-state='%s'>%s</button>",
-            relay_state ? "relay-on" : "relay-off",
-            relay_state ? "1" : "0",
-            relay_state ? "Apagar rele" : "Encender rele");
-        httpd_resp_sendstr_chunk(req, relay_btn);
+        char ctrl_row[300];
+        snprintf(ctrl_row, sizeof(ctrl_row),
+            "<div class='ctrl-row'>"
+            "<button id='sysBtn' class='relay-btn %s' onclick='toggleSystem()' data-state='%s'>%s</button>"
+            "<button id='motorBtn' class='relay-btn %s' onclick='toggleMotor()' data-state='%s'>%s</button>"
+            "</div>",
+            system_enabled ? "relay-on" : "relay-off",
+            system_enabled ? "1" : "0",
+            system_enabled ? "Apagar sistema" : "Encender sistema",
+            motor_enabled ? "relay-on" : "relay-off",
+            motor_enabled ? "1" : "0",
+            motor_enabled ? "Apagar motor" : "Encender motor");
+        httpd_resp_sendstr_chunk(req, ctrl_row);
     }
 
     /* config form — dynamic */
@@ -209,39 +242,81 @@ static esp_err_t root_handler(httpd_req_t *req)
 
         httpd_resp_sendstr_chunk(req,
             "<div class='form-card'><h2>Configuracion</h2>"
-            "<form action='/set' method='get'><div class='fields'>");
+            "<form action='/set' method='get'><div class='fields'>"
+            "<div class='section-title'>Rel&eacute;</div>");
 
-        char fields[1024];
-        snprintf(fields, sizeof(fields),
-            "<div class='field'><label>Motor arranca (&#176;C)</label>"
-            "<input name='motor_off_c' type='number' step='.1' value='%.1f'></div>"
-            "<div class='field'><label>Motor maximo (&#176;C)</label>"
-            "<input name='motor_max_c' type='number' step='.1' value='%.1f'></div>"
-            "<div class='field'><label>PWM minimo (%%)</label>"
-            "<input name='motor_pwm_min_pct' type='number' min='0' max='100' value='%u'></div>"
-            "<div class='field'><label>Corte rele (&#176;C)</label>"
-            "<input name='relay_cutoff_c' type='number' step='.1' value='%.1f'></div>"
-            "<div class='field'><label>Rearme rele (&#176;C)</label>"
-            "<input name='relay_resume_c' type='number' step='.1' value='%.1f'></div>"
-            "<div class='field'><label>Buzzer alerta (&#176;C)</label>"
-            "<input name='buzzer_warning_c' type='number' step='.1' value='%.1f'></div>"
-            "<div class='field'><label>IP</label><input value='%s' disabled></div>"
-            "<div class='field'><label>Sensor</label><input value='%s' disabled></div>",
-            app_config.motor_temp_off_c, app_config.motor_temp_max_c,
-            app_config.motor_pwm_min_pct,
-            app_config.relay_cutoff_c, app_config.relay_resume_c,
-            app_config.buzzer_warning_c,
-            ip_str, sensor_str);
-        httpd_resp_sendstr_chunk(req, fields);
+        {
+            char relay_fields[350];
+            snprintf(relay_fields, sizeof(relay_fields),
+                "<div class='field'><label>Corte rele (&#176;C)</label>"
+                "<input name='relay_cutoff_c' type='number' step='.1' value='%.1f'></div>"
+                "<div class='field'><label>Rearme rele (&#176;C)</label>"
+                "<input name='relay_resume_c' type='number' step='.1' value='%.1f'></div>",
+                app_config.relay_cutoff_c, app_config.relay_resume_c);
+            httpd_resp_sendstr_chunk(req, relay_fields);
+        }
+
+        httpd_resp_sendstr_chunk(req, "<div class='section-title'>Motor</div>");
+
+        {
+            char motor_fields[512];
+            snprintf(motor_fields, sizeof(motor_fields),
+                "<div class='field'><label>Motor arranca (&#176;C)</label>"
+                "<input name='motor_off_c' type='number' step='.1' value='%.1f'></div>"
+                "<div class='field'><label>Motor maximo (&#176;C)</label>"
+                "<input name='motor_max_c' type='number' step='.1' value='%.1f'></div>"
+                "<div class='field'><label>PWM minimo (%%)</label>"
+                "<input name='motor_pwm_min_pct' type='number' min='0' max='100' value='%u'></div>",
+                app_config.motor_temp_off_c, app_config.motor_temp_max_c,
+                app_config.motor_pwm_min_pct);
+            httpd_resp_sendstr_chunk(req, motor_fields);
+        }
+
+        httpd_resp_sendstr_chunk(req, "<div class='section-title'>Buzzer</div>");
+
+        {
+            char buzzer_fields[600];
+            snprintf(buzzer_fields, sizeof(buzzer_fields),
+                "<div class='field'><label>Buzzer alerta (&#176;C)</label>"
+                "<input name='buzzer_warning_c' type='number' step='.1' value='%.1f'></div>"
+                "<div class='field'><label>Buzzer rearme (&#176;C)</label>"
+                "<input name='buzzer_disarm_c' type='number' step='.1' value='%.1f'></div>"
+                "<div class='field'><label>Tipo sonido buzzer</label>"
+                "<select name='buzzer_tone_type'>"
+                "<option value='0'%s>Beeps cortos</option>"
+                "<option value='1'%s>Tono largo</option>"
+                "<option value='2'%s>Alarma doble</option>"
+                "</select></div>",
+                app_config.buzzer_warning_c,
+                app_config.buzzer_disarm_c,
+                app_config.buzzer_tone_type == 0 ? " selected" : "",
+                app_config.buzzer_tone_type == 1 ? " selected" : "",
+                app_config.buzzer_tone_type == 2 ? " selected" : "");
+            httpd_resp_sendstr_chunk(req, buzzer_fields);
+        }
 
         httpd_resp_sendstr_chunk(req,
-            "</div><div class='toggle-row'><label>Buzzer habilitado</label>");
+            "<div class='toggle-row'><label>Buzzer habilitado</label>");
         httpd_resp_sendstr_chunk(req,
             app_config.buzzer_enabled
             ? "<input name='buzzer_enabled' type='checkbox' value='1' checked>"
             : "<input name='buzzer_enabled' type='checkbox' value='1'>");
         httpd_resp_sendstr_chunk(req,
-            "<input type='hidden' name='buzzer_enabled' value='0'></div>"
+            "<input type='hidden' name='buzzer_enabled' value='0'></div>");
+
+        httpd_resp_sendstr_chunk(req, "<div class='section-title'>Info</div>");
+
+        {
+            char info_fields[256];
+            snprintf(info_fields, sizeof(info_fields),
+                "<div class='field'><label>IP</label><input value='%s' disabled></div>"
+                "<div class='field'><label>Sensor</label><input value='%s' disabled></div>",
+                ip_str, sensor_str);
+            httpd_resp_sendstr_chunk(req, info_fields);
+        }
+
+        httpd_resp_sendstr_chunk(req,
+            "</div>"
             "<div class='actions'>"
             "<button class='btn btn-primary' type='submit'>Guardar cambios</button>"
             "<a class='btn btn-ghost' href='/set?reset=1'>Restaurar defaults</a>"
@@ -254,7 +329,7 @@ static esp_err_t root_handler(httpd_req_t *req)
         "<script src='https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'></script>"
         "<script>"
         "const MAX=60,labels=[],t1Data=[],t2Data=[];"
-        "let chart=null,relayBusy=false;"
+        "let chart=null,sysBusy=false,motorBusy=false;"
         "function initChart(){"
         "const ctx=document.getElementById('tempChart').getContext('2d');"
         "chart=new Chart(ctx,{"
@@ -287,13 +362,24 @@ static esp_err_t root_handler(httpd_req_t *req)
         "if(rv){rv.textContent=d.relay==='on'?'ON':'OFF';"
         "rv.parentElement.className='card '+(d.relay==='on'?'c-green':'c-red');}"
         "const rs=g('relaySub');"
-        "if(rs)rs.textContent=d.relay_overheat?'proteccion termica':(d.relay==='on'?'activo':'inactivo');"
-        "const btn=g('relayBtn');"
-        "if(btn&&!relayBusy){"
-        "btn.dataset.state=d.relay==='on'?'1':'0';"
-        "btn.textContent=d.relay==='on'?'Apagar rele':'Encender rele';"
-        "btn.className='relay-btn '+(d.relay==='on'?'relay-on':'relay-off');"
-        "btn.disabled=!!d.relay_overheat;}"
+        "if(rs)rs.textContent=!d.system_enabled?'sistema apagado':"
+        "d.relay_overheat?'proteccion termica':(d.relay==='on'?'activo':'inactivo');"
+        "const banner=g('sysBanner');"
+        "if(banner){banner.textContent=d.system_enabled?'Sistema encendido':'Sistema apagado';"
+        "banner.className='sys-banner '+(d.system_enabled?'sys-on':'sys-off');}"
+        "const btn=g('sysBtn');"
+        "if(btn&&!sysBusy){"
+        "btn.dataset.state=d.system_enabled?'1':'0';"
+        "btn.textContent=d.system_enabled?'Apagar sistema':'Encender sistema';"
+        "btn.className='relay-btn '+(d.system_enabled?'relay-on':'relay-off');}"
+        "const mb=g('motorBtn');"
+        "if(mb&&!motorBusy){"
+        "mb.dataset.state=d.motor_enabled?'1':'0';"
+        "mb.textContent=d.motor_enabled?'Apagar motor':'Encender motor';"
+        "mb.className='relay-btn '+(d.motor_enabled?'relay-on':'relay-off');}"
+        "const ms=g('motorSub');"
+        "if(ms)ms.textContent=!d.system_enabled?'sistema apagado':"
+        "d.motor_enabled?'habilitado':'deshabilitado';"
         "if(g('motorVal'))g('motorVal').textContent=d.motor_pwm_pct+'%';"
         "const mf=g('motorFill');if(mf)mf.style.width=d.motor_pwm_pct+'%';"
         "if(g('rssiVal'))g('rssiVal').textContent=d.rssi;"
@@ -309,18 +395,31 @@ static esp_err_t root_handler(httpd_req_t *req)
         "updateStats(d);pushPoint(d.t1_c,d.t2_c);"
         "}catch(e){console.warn('poll',e);}"
         "}"
-        "async function toggleRelay(){"
-        "const btn=g('relayBtn');"
-        "if(!btn||relayBusy)return;"
-        "relayBusy=true;btn.disabled=true;"
+        "async function toggleMotor(){"
+        "const btn=g('motorBtn');"
+        "if(!btn||motorBusy)return;"
+        "motorBusy=true;btn.disabled=true;"
         "const wantOn=btn.dataset.state==='0'?1:0;"
-        "try{const r=await fetch('/relay?state='+wantOn,{cache:'no-store'});"
+        "try{const r=await fetch('/motor?state='+wantOn,{cache:'no-store'});"
         "const d=await r.json();"
-        "btn.dataset.state=d.relay==='on'?'1':'0';"
-        "btn.textContent=d.relay==='on'?'Apagar rele':'Encender rele';"
-        "btn.className='relay-btn '+(d.relay==='on'?'relay-on':'relay-off');"
-        "}catch(e){console.warn('relay',e);}"
-        "finally{relayBusy=false;btn.disabled=false;}"
+        "btn.dataset.state=d.motor_enabled?'1':'0';"
+        "btn.textContent=d.motor_enabled?'Apagar motor':'Encender motor';"
+        "btn.className='relay-btn '+(d.motor_enabled?'relay-on':'relay-off');"
+        "}catch(e){console.warn('motor',e);}"
+        "finally{motorBusy=false;btn.disabled=false;}"
+        "}"
+        "async function toggleSystem(){"
+        "const btn=g('sysBtn');"
+        "if(!btn||sysBusy)return;"
+        "sysBusy=true;btn.disabled=true;"
+        "const wantOn=btn.dataset.state==='0'?1:0;"
+        "try{const r=await fetch('/system?state='+wantOn,{cache:'no-store'});"
+        "const d=await r.json();"
+        "btn.dataset.state=d.system_enabled?'1':'0';"
+        "btn.textContent=d.system_enabled?'Apagar sistema':'Encender sistema';"
+        "btn.className='relay-btn '+(d.system_enabled?'relay-on':'relay-off');"
+        "}catch(e){console.warn('system',e);}"
+        "finally{sysBusy=false;btn.disabled=false;}"
         "}"
         "document.addEventListener('DOMContentLoaded',function(){"
         "initChart();refresh();setInterval(refresh,3000);"
@@ -371,12 +470,15 @@ static esp_err_t status_handler(httpd_req_t *req)
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     snprintf(message,
              sizeof(message),
-             "{\"relay\":\"%s\",\"relay_overheat\":%s,"
+             "{\"system_enabled\":%s,\"motor_enabled\":%s,"
+             "\"relay\":\"%s\",\"relay_overheat\":%s,"
              "\"motor_pwm_pct\":%" PRIu32 ",\"motor_pwm_duty\":%" PRIu32 ","
              "\"sensor\":\"%s\",\"sensor_temp_c\":%s,"
              "\"t1_valid\":%s,\"t2_valid\":%s,"
              "\"t1_c\":%s,\"t2_c\":%s,"
              "\"rssi\":%d,\"uptime_s\":%" PRIu64 "}",
+             system_enabled ? "true" : "false",
+             motor_enabled ? "true" : "false",
              relay_state ? "on" : "off",
              relay_overheat_lockout ? "true" : "false",
              (motor_pwm_duty * 100U) / MOTOR_PWM_DUTY_MAX,
@@ -421,6 +523,12 @@ static esp_err_t set_handler(httpd_req_t *req)
         if (httpd_query_key_value(query, "buzzer_warning_c", value, sizeof(value)) == ESP_OK) {
             next.buzzer_warning_c = strtof(value, NULL);
         }
+        if (httpd_query_key_value(query, "buzzer_disarm_c", value, sizeof(value)) == ESP_OK) {
+            next.buzzer_disarm_c = strtof(value, NULL);
+        }
+        if (httpd_query_key_value(query, "buzzer_tone_type", value, sizeof(value)) == ESP_OK) {
+            next.buzzer_tone_type = (uint8_t)strtoul(value, NULL, 10);
+        }
         if (httpd_query_key_value(query, "buzzer_enabled", value, sizeof(value)) == ESP_OK) {
             next.buzzer_enabled = strcmp(value, "0") != 0;
         }
@@ -448,7 +556,7 @@ static esp_err_t set_handler(httpd_req_t *req)
     return httpd_resp_send(req, NULL, 0);
 }
 
-static esp_err_t relay_handler(httpd_req_t *req)
+static esp_err_t motor_handler(httpd_req_t *req)
 {
     char query[32] = {0};
     char value[8] = {0};
@@ -465,22 +573,39 @@ static esp_err_t relay_handler(httpd_req_t *req)
         return httpd_resp_sendstr(req, "{\"error\":\"missing state\"}");
     }
 
-    bool want_on = strcmp(value, "1") == 0;
+    motor_enabled = strcmp(value, "1") == 0;
+    if (!motor_enabled) {
+        motor_pwm_set_duty(0);
+    }
+    ESP_LOGI(TAG, "motor web: %s", motor_enabled ? "on" : "off");
 
-    if (want_on && relay_overheat_lockout) {
-        httpd_resp_set_status(req, "409 Conflict");
-        return httpd_resp_sendstr(req, "{\"error\":\"relay_overheat_lockout\",\"relay\":\"off\"}");
+    char resp[48];
+    snprintf(resp, sizeof(resp), "{\"motor_enabled\":%s}", motor_enabled ? "true" : "false");
+    return httpd_resp_sendstr(req, resp);
+}
+
+static esp_err_t system_handler(httpd_req_t *req)
+{
+    char query[32] = {0};
+    char value[8] = {0};
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+
+    if (httpd_req_get_url_query_len(req) > 0) {
+        ESP_ERROR_CHECK_WITHOUT_ABORT(httpd_req_get_url_query_str(req, query, sizeof(query)));
     }
 
-    relay_apply(want_on);
-    notify_relay_state();
-    ESP_LOGI(TAG, "relay web: %s", want_on ? "on" : "off");
+    if (httpd_query_key_value(query, "state", value, sizeof(value)) != ESP_OK) {
+        httpd_resp_set_status(req, "400 Bad Request");
+        return httpd_resp_sendstr(req, "{\"error\":\"missing state\"}");
+    }
 
-    char resp[80];
-    snprintf(resp, sizeof(resp),
-             "{\"relay\":\"%s\",\"relay_overheat\":%s}",
-             relay_state ? "on" : "off",
-             relay_overheat_lockout ? "true" : "false");
+    system_enabled = strcmp(value, "1") == 0;
+    ESP_LOGI(TAG, "system web: %s", system_enabled ? "on" : "off");
+
+    char resp[48];
+    snprintf(resp, sizeof(resp), "{\"system_enabled\":%s}", system_enabled ? "true" : "false");
     return httpd_resp_sendstr(req, resp);
 }
 
@@ -515,17 +640,24 @@ static esp_err_t web_server_start(void)
         .handler = set_handler,
         .user_ctx = NULL,
     };
-    httpd_uri_t relay_uri = {
-        .uri = "/relay",
+    httpd_uri_t motor_uri = {
+        .uri = "/motor",
         .method = HTTP_GET,
-        .handler = relay_handler,
+        .handler = motor_handler,
+        .user_ctx = NULL,
+    };
+    httpd_uri_t system_uri = {
+        .uri = "/system",
+        .method = HTTP_GET,
+        .handler = system_handler,
         .user_ctx = NULL,
     };
 
     ESP_ERROR_CHECK(httpd_register_uri_handler(web_server_handle, &root_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(web_server_handle, &status_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(web_server_handle, &set_uri));
-    ESP_ERROR_CHECK(httpd_register_uri_handler(web_server_handle, &relay_uri));
+    ESP_ERROR_CHECK(httpd_register_uri_handler(web_server_handle, &motor_uri));
+    ESP_ERROR_CHECK(httpd_register_uri_handler(web_server_handle, &system_uri));
     ESP_LOGI(TAG, "web server listo stack=%d", config.stack_size);
     return ESP_OK;
 }

@@ -23,3 +23,5 @@ float last_reported_temperature_c[DS18B20_MAX_SENSORS] = {0.0f};
 bool last_reported_relay_state = false;
 uint32_t last_status_report_tick = 0;
 app_config_t app_config = {0};
+bool system_enabled = false;
+bool motor_enabled = true;

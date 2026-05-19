@@ -28,16 +28,37 @@ static void buzzer_stop(void)
 static void buzzer_warning_task(void *arg)
 {
     (void)arg;
-    const uint32_t half_duty_10bit = 512;
+    const uint32_t half_duty = 512;
 
     while (1) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-        for (int i = 0; i < 3; ++i) {
-            buzzer_set_tone(2200, half_duty_10bit);
-            vTaskDelay(pdMS_TO_TICKS(120));
+        switch (app_config.buzzer_tone_type) {
+        case 1:
+            for (int i = 0; i < 3; ++i) {
+                buzzer_set_tone(2000, half_duty);
+                vTaskDelay(pdMS_TO_TICKS(500));
+                buzzer_stop();
+                vTaskDelay(pdMS_TO_TICKS(200));
+            }
+            break;
+        case 2:
+            for (int i = 0; i < 6; ++i) {
+                buzzer_set_tone(800, half_duty);
+                vTaskDelay(pdMS_TO_TICKS(200));
+                buzzer_set_tone(1600, half_duty);
+                vTaskDelay(pdMS_TO_TICKS(200));
+            }
             buzzer_stop();
-            vTaskDelay(pdMS_TO_TICKS(80));
+            break;
+        default:
+            for (int i = 0; i < 3; ++i) {
+                buzzer_set_tone(2200, half_duty);
+                vTaskDelay(pdMS_TO_TICKS(120));
+                buzzer_stop();
+                vTaskDelay(pdMS_TO_TICKS(80));
+            }
+            break;
         }
     }
 }

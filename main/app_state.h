@@ -11,7 +11,9 @@ typedef struct {
     float relay_cutoff_c;
     float relay_resume_c;
     float buzzer_warning_c;
+    float buzzer_disarm_c;
     uint8_t motor_pwm_min_pct;
+    uint8_t buzzer_tone_type;
     bool buzzer_enabled;
 } app_config_t;
 
@@ -37,3 +39,5 @@ extern float last_reported_temperature_c[DS18B20_MAX_SENSORS];
 extern bool last_reported_relay_state;
 extern uint32_t last_status_report_tick;
 extern app_config_t app_config;
+extern bool system_enabled;
+extern bool motor_enabled;

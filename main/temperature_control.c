@@ -374,65 +374,77 @@ static void ds18b20_task(void *arg)
                 ESP_LOGI(TAG, "%s = %.2f C", temperature_sensor_label(i), temperature_c);
 
                 if (is_motor_control_sensor(i)) {
-                    motor_apply_for_temperature(temperature_c);
-                    ESP_LOGI(TAG,
-                             "motor control sensor=%s temp=%.2f C pwm=%" PRIu32 " (%" PRIu32 "%%)",
-                             temperature_sensor_label(i),
-                             temperature_c,
-                             motor_pwm_duty,
-                             (motor_pwm_duty * 100U) / MOTOR_PWM_DUTY_MAX);
-
-                    if (app_config.buzzer_enabled && temperature_c >= app_config.buzzer_warning_c) {
-                        if (buzzer_warning_armed) {
-                            buzzer_warning_armed = false;
-                            buzzer_play_warning_async();
-                            ESP_LOGW(TAG,
-                                     "advertencia sonora: %s llego a %.2f C (umbral %.2f C)",
-                                     temperature_sensor_label(i),
-                                     temperature_c,
-                                     app_config.buzzer_warning_c);
-                        }
-                    } else {
-                        buzzer_warning_armed = true;
-                    }
-
-                    if (temperature_c >= app_config.relay_cutoff_c) {
-                        relay_overheat_lockout = true;
+                    if (!system_enabled) {
+                        motor_pwm_set_duty(0);
                         if (relay_state) {
                             relay_apply(false);
                             notify_relay_state();
                         }
-                        ESP_LOGW(TAG,
-                                 "proteccion termica: rele=off por %s %.2f C (corte %.2f C)",
-                                 temperature_sensor_label(i),
-                                 temperature_c,
-                                 app_config.relay_cutoff_c);
-                    } else if (relay_overheat_lockout && temperature_c <= app_config.relay_resume_c) {
-                        relay_overheat_lockout = false;
-                        ESP_LOGI(TAG,
-                                 "proteccion termica liberada por %s %.2f C (rearme %.2f C)",
-                                 temperature_sensor_label(i),
-                                 temperature_c,
-                                 app_config.relay_resume_c);
-                        if (!relay_state) {
+                    } else {
+                        if (motor_enabled) {
+                            motor_apply_for_temperature(temperature_c);
+                            ESP_LOGI(TAG,
+                                     "motor control sensor=%s temp=%.2f C pwm=%" PRIu32 " (%" PRIu32 "%%)",
+                                     temperature_sensor_label(i),
+                                     temperature_c,
+                                     motor_pwm_duty,
+                                     (motor_pwm_duty * 100U) / MOTOR_PWM_DUTY_MAX);
+                        } else {
+                            motor_pwm_set_duty(0);
+                        }
+
+                        if (app_config.buzzer_enabled && temperature_c >= app_config.buzzer_warning_c) {
+                            if (buzzer_warning_armed) {
+                                buzzer_warning_armed = false;
+                                buzzer_play_warning_async();
+                                ESP_LOGW(TAG,
+                                         "advertencia sonora: %s llego a %.2f C (umbral %.2f C)",
+                                         temperature_sensor_label(i),
+                                         temperature_c,
+                                         app_config.buzzer_warning_c);
+                            }
+                        } else if (temperature_c <= app_config.buzzer_disarm_c) {
+                            buzzer_warning_armed = true;
+                        }
+
+                        if (temperature_c >= app_config.relay_cutoff_c) {
+                            relay_overheat_lockout = true;
+                            if (relay_state) {
+                                relay_apply(false);
+                                notify_relay_state();
+                            }
+                            ESP_LOGW(TAG,
+                                     "proteccion termica: rele=off por %s %.2f C (corte %.2f C)",
+                                     temperature_sensor_label(i),
+                                     temperature_c,
+                                     app_config.relay_cutoff_c);
+                        } else if (relay_overheat_lockout && temperature_c <= app_config.relay_resume_c) {
+                            relay_overheat_lockout = false;
+                            ESP_LOGI(TAG,
+                                     "proteccion termica liberada por %s %.2f C (rearme %.2f C)",
+                                     temperature_sensor_label(i),
+                                     temperature_c,
+                                     app_config.relay_resume_c);
+                            if (!relay_state) {
+                                relay_apply(true);
+                                notify_relay_state();
+                                ESP_LOGI(TAG,
+                                         "control automatico local: rele=on por %s %.2f C (rearme <= %.2f C)",
+                                         temperature_sensor_label(i),
+                                         temperature_c,
+                                         app_config.relay_resume_c);
+                            }
+                        } else if (!relay_overheat_lockout &&
+                                   temperature_c <= app_config.relay_resume_c &&
+                                   !relay_state) {
                             relay_apply(true);
                             notify_relay_state();
                             ESP_LOGI(TAG,
-                                     "control automatico local: rele=on por %s %.2f C (rearme <= %.2f C)",
+                                     "control automatico local: rele=on por %s %.2f C (encendido <= %.2f C)",
                                      temperature_sensor_label(i),
                                      temperature_c,
                                      app_config.relay_resume_c);
                         }
-                    } else if (!relay_overheat_lockout &&
-                               temperature_c <= app_config.relay_resume_c &&
-                               !relay_state) {
-                        relay_apply(true);
-                        notify_relay_state();
-                        ESP_LOGI(TAG,
-                                 "control automatico local: rele=on por %s %.2f C (encendido <= %.2f C)",
-                                 temperature_sensor_label(i),
-                                 temperature_c,
-                                 app_config.relay_resume_c);
                     }
                 }
 

@@ -63,7 +63,7 @@ void app_main(void)
     if (wifi_sta_credentials_present()) {
         ESP_LOGI(TAG, "web: cuando conecte a wifi entra por la IP que aparezca en el serial");
     } else {
-        ESP_LOGI(TAG, "para habilitar web local, completa WIFI_STA_SSID y WIFI_STA_PASSWORD en main.c");
+        ESP_LOGI(TAG, "para habilitar web local, completa WIFI_STA_SSID y WIFI_STA_PASSWORD en app_state.c");
     }
 
     while (1) {
