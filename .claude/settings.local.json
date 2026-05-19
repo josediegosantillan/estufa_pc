@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"c:\\\\ESP32_PROYECTOS\\\\esp32_estufa\" -Recurse -Force)",
+      "Bash(Select-Object -First 50)",
+      "Bash(powershell -Command \"Get-ChildItem -Path 'C:\\\\' -Recurse -Filter 'esp_http_server.h' -ErrorAction SilentlyContinue -Depth 10 | Select-Object -First 5 FullName\")",
+      "Bash(grep -n \"HTTPD_DEFAULT_CONFIG\\\\|max_uri_handlers\\\\|max_open_sockets\\\\|stack_size\\\\|lru_purge\" \"C:\\\\esp\\\\v5.5.4\\\\esp-idf\\\\components\\\\esp_http_server\\\\include\\\\esp_http_server.h\" | head -30)",
+      "Read(//c/esp/v5.5.4/esp-idf/components/esp_http_server/include/**)"
+    ]
+  }
+}

@@ -1,0 +1,36 @@
+#pragma once
+
+#include "sdkconfig.h"
+#include "freertos/FreeRTOS.h"
+#include "driver/gpio.h"
+
+#define DS18B20_MAX_SENSORS 2
+#define DS18B20_SENSOR1_LABEL "t1_frente"
+#define DS18B20_SENSOR2_LABEL "t2_superior"
+#define WIFI_CONNECTED_BIT BIT0
+
+#define MOTOR_PWM_FREQ_HZ 20000U
+#define MOTOR_PWM_DUTY_MAX 1023U
+#define ESPNOW_STATUS_TEMP_DELTA_C 0.5f
+#define BUTTON_POLL_INTERVAL pdMS_TO_TICKS(20)
+#define BUTTON_DEBOUNCE_TIME pdMS_TO_TICKS(60)
+#define DS18B20_POLL_INTERVAL pdMS_TO_TICKS(2000)
+#define ESPNOW_STATUS_HEARTBEAT_INTERVAL pdMS_TO_TICKS(30000)
+
+#if CONFIG_IDF_TARGET_ESP32C3
+#define UNUSED_GPIO_PULLDOWN_MASK 0ULL
+#define RELAY_GPIO GPIO_NUM_4
+#define RELAY_BUTTON_GPIO GPIO_NUM_5
+#define DS18B20_GPIO GPIO_NUM_3
+#define MOTOR_PWM_GPIO GPIO_NUM_7
+#define BUZZER_GPIO GPIO_NUM_6
+#elif CONFIG_IDF_TARGET_ESP32
+#define UNUSED_GPIO_PULLDOWN_MASK 0ULL
+#define RELAY_GPIO GPIO_NUM_16
+#define RELAY_BUTTON_GPIO GPIO_NUM_17
+#define DS18B20_GPIO GPIO_NUM_4
+#define MOTOR_PWM_GPIO GPIO_NUM_18
+#define BUZZER_GPIO GPIO_NUM_19
+#else
+#error "Defini el mapa de pines para este target antes de compilar."
+#endif
